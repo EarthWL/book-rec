@@ -28,7 +28,7 @@ AI-powered manga and book collection management system with barcode scanning and
 
 ```bash
 # Clone repository
-git clone https://github.com/YOUR_USERNAME/book-rec.git
+git clone https://github.com/EarthWL/book-rec.git
 cd book-rec
 
 # Create .env file
@@ -233,8 +233,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Support
 
 - 📖 Documentation: [DEPLOYMENT.md](./DEPLOYMENT.md)
-- 🐛 Issues: [GitHub Issues](https://github.com/YOUR_USERNAME/book-rec/issues)
-- 💬 Discussions: [GitHub Discussions](https://github.com/YOUR_USERNAME/book-rec/discussions)
+- 🐛 Issues: [GitHub Issues](https://github.com/EarthWL/book-rec/issues)
+- 💬 Discussions: [GitHub Discussions](https://github.com/EarthWL/book-rec/discussions)
 
 ## Author
 

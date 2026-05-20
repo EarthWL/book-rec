@@ -52,7 +52,7 @@ exit
 ```bash
 # Clone your repository
 cd /opt
-sudo git clone https://github.com/YOUR_USERNAME/book-rec.git
+sudo git clone https://github.com/EarthWL/book-rec.git
 cd book-rec
 
 # Or upload files using scp:
