@@ -36,13 +36,6 @@ def connect() -> Iterator[sqlite3.Connection]:
 
 def init_db() -> None:
     with connect() as conn:
-        # Add cover_url column to series table if it doesn't exist (migration)
-        try:
-            conn.execute("SELECT cover_url FROM series LIMIT 1")
-        except sqlite3.OperationalError:
-            conn.execute("ALTER TABLE series ADD COLUMN cover_url TEXT")
-            conn.commit()
-
         conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS series (
@@ -87,6 +80,13 @@ def init_db() -> None:
             CREATE UNIQUE INDEX IF NOT EXISTS idx_volumes_barcode ON volumes(barcode) WHERE barcode IS NOT NULL AND barcode != '';
             """
         )
+
+        # Migration for databases created before the cover_url column existed.
+        try:
+            conn.execute("SELECT cover_url FROM series LIMIT 1")
+        except sqlite3.OperationalError:
+            conn.execute("ALTER TABLE series ADD COLUMN cover_url TEXT")
+            conn.commit()
 
 
 def row_to_volume(row: sqlite3.Row) -> dict[str, Any]:

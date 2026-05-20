@@ -1,0 +1,77 @@
+# Deployment compose for this host (Cloudflare Tunnel + Traefik already running).
+#
+# Ingress chain:  Cloudflare (Zero Trust / Access)  ->  cloudflared tunnel
+#                 ->  Traefik (entrypoint `web`, external `proxy` network)
+#                 ->  frontend (nginx :80, proxies /api -> backend)
+#                 ->  backend (FastAPI :8000, validates the Access JWT)
+#
+# TLS is terminated by Cloudflare, so there is no certbot and no published
+# 80/443 ports here — only Traefik talks to the containers over the `proxy`
+# network. Auth is enforced in the backend by validating the Cloudflare Access
+# JWT against the app's AUD tag (see backend/app/auth.py).
+#
+# Usage:  docker compose -f docker-compose.deploy.yml up -d --build
+
+services:
+  backend:
+    build:
+      context: ./backend
+    platform: linux/amd64          # this host is x86_64
+    environment:
+      DATA_DIR: /data
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://book.aibix.dev}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      GEMINI_USE_GOOGLE_SEARCH: ${GEMINI_USE_GOOGLE_SEARCH:-true}
+      GEMINI_REQUIRE_SOURCE: ${GEMINI_REQUIRE_SOURCE:-true}
+      GEMINI_MIN_CONFIDENCE: ${GEMINI_MIN_CONFIDENCE:-0.75}
+      # Cloudflare Access (Zero Trust) — JWT is validated against this AUD tag.
+      CF_ACCESS_AUD: ${CF_ACCESS_AUD}
+      CF_ACCESS_TEAM_DOMAIN: ${CF_ACCESS_TEAM_DOMAIN}
+    volumes:
+      - manga-data:/data
+    restart: unless-stopped
+    healthcheck:
+      # python is always present in the slim image; curl is not.
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - internal
+
+  frontend:
+    build:
+      context: ./frontend          # uses nginx.conf: listen 80, proxies /api -> backend:8000
+    platform: linux/amd64
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - internal
+      - proxy
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=proxy
+      - traefik.http.routers.book-rec.rule=Host(`${BOOK_DOMAIN:-book.aibix.dev}`)
+      - traefik.http.routers.book-rec.entrypoints=web
+      - traefik.http.services.book-rec.loadbalancer.server.port=80
+    healthcheck:
+      # busybox wget ships with nginx:alpine. Use 127.0.0.1 — nginx listens on
+      # IPv4 only, and busybox resolves `localhost` to ::1 (refused).
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  manga-data:
+    driver: local
+
+networks:
+  internal:
+    driver: bridge
+  proxy:
+    external: true        # shared with Traefik (`docker network create proxy`)

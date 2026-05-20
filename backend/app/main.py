@@ -3,9 +3,12 @@ import sqlite3
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 
+from .auth import ACCESS_COOKIE, ACCESS_HEADER, CloudflareAccessError, verifier
 from .database import connect, find_duplicates, find_or_create_series, init_db, row_to_volume, update_series_cover, utc_now
 from .metadata import lookup_metadata, normalize_code
 from .schemas import (
@@ -35,6 +38,25 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def cloudflare_access(request: Request, call_next):
+    """Enforce a valid Cloudflare Access JWT on every /api/* request.
+
+    `/health` is left open so container/Traefik health checks work without a
+    token. When the verifier is disabled (no AUD/team domain configured) all
+    requests pass through, which keeps local development frictionless.
+    """
+    if verifier.enabled and request.url.path.startswith("/api"):
+        token = request.headers.get(ACCESS_HEADER) or request.cookies.get(ACCESS_COOKIE)
+        if not token:
+            return JSONResponse({"detail": "Cloudflare Access token required"}, status_code=401)
+        try:
+            request.state.cf_identity = await run_in_threadpool(verifier.verify, token)
+        except CloudflareAccessError:
+            return JSONResponse({"detail": "Invalid Cloudflare Access token"}, status_code=403)
+    return await call_next(request)
 
 
 @app.get("/health")
