@@ -1,0 +1,27 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    environment:
+      DATA_DIR: /data
+      CORS_ORIGINS: http://localhost:8080,http://127.0.0.1:8080
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      GEMINI_USE_GOOGLE_SEARCH: ${GEMINI_USE_GOOGLE_SEARCH:-true}
+      GEMINI_REQUIRE_SOURCE: ${GEMINI_REQUIRE_SOURCE:-true}
+      GEMINI_MIN_CONFIDENCE: ${GEMINI_MIN_CONFIDENCE:-0.75}
+    volumes:
+      - manga-data:/data
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  manga-data:

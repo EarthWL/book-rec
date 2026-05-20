@@ -1,0 +1,24 @@
+FROM node:24-alpine AS build
+
+WORKDIR /app
+COPY package.json package-lock.json* ./
+RUN npm install
+COPY . .
+RUN npm run build
+
+FROM nginx:1.27-alpine
+
+# Copy production nginx config
+COPY nginx.prod.conf /etc/nginx/conf.d/default.conf.template
+COPY --from=build /app/dist /usr/share/nginx/html
+
+# Install envsubst for domain replacement
+RUN apk add --no-cache gettext
+
+# Create directory for certbot challenges
+RUN mkdir -p /var/www/certbot
+
+EXPOSE 80 443
+
+# Replace YOUR_DOMAIN with actual domain from environment variable
+CMD ["/bin/sh", "-c", "envsubst '$$DOMAIN' < /etc/nginx/conf.d/default.conf.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"]

@@ -1,0 +1,62 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    environment:
+      DATA_DIR: /data
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.1-flash-lite}
+      GEMINI_USE_GOOGLE_SEARCH: ${GEMINI_USE_GOOGLE_SEARCH:-true}
+      GEMINI_REQUIRE_SOURCE: ${GEMINI_REQUIRE_SOURCE:-true}
+      GEMINI_MIN_CONFIDENCE: ${GEMINI_MIN_CONFIDENCE:-0.75}
+    volumes:
+      - manga-data:/data
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - internal
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: always
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt:ro
+      - ./certbot/www:/var/www/certbot:ro
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Certbot for SSL certificate management
+  certbot:
+    image: certbot/certbot:latest
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done;'"
+    networks:
+      - internal
+
+volumes:
+  manga-data:
+    driver: local
+
+networks:
+  internal:
+    driver: bridge
