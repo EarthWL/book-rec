@@ -21,7 +21,7 @@ left open for health checks.
 ## 1. Create the Access application
 
 In **Cloudflare dashboard → Zero Trust → Access → Applications**, add a
-self-hosted app for your hostname (e.g. `book.aibix.dev`) and define the
+self-hosted app for your hostname (e.g. `your-app.example.com`) and define the
 policies (who may log in). Then copy two values:
 
 - **Application Audience (AUD) Tag** → `CF_ACCESS_AUD`
@@ -35,7 +35,7 @@ Make sure the tunnel/`cloudflared` route for that hostname points at Traefik
 ```bash
 cp .env.example .env
 # set GEMINI_API_KEY, CF_ACCESS_AUD, CF_ACCESS_TEAM_DOMAIN
-# (BOOK_DOMAIN / CORS_ORIGINS default to book.aibix.dev)
+# (BOOK_DOMAIN / CORS_ORIGINS default to your-app.example.com)
 ```
 
 ## 3. Deploy
@@ -48,7 +48,7 @@ docker compose -f docker-compose.deploy.yml up -d --build
 ```
 
 Traefik auto-discovers the frontend via its labels and routes
-`Host(book.aibix.dev)` to it. The backend stays on the internal network only.
+`Host(your-app.example.com)` to it. The backend stays on the internal network only.
 
 ## 4. Verify
 
@@ -56,10 +56,10 @@ Traefik auto-discovers the frontend via its labels and routes
 docker compose -f docker-compose.deploy.yml ps          # both healthy
 
 # Without a token the API is rejected (proves auth is on):
-curl -i https://book.aibix.dev/api/dashboard            # 401/403 via Cloudflare login
+curl -i https://your-app.example.com/api/dashboard            # 401/403 via Cloudflare login
 
 # Health stays open:
-curl https://book.aibix.dev/health                      # {"status":"ok"}
+curl https://your-app.example.com/health                      # {"status":"ok"}
 ```
 
 > Auth toggle: if `CF_ACCESS_AUD` or `CF_ACCESS_TEAM_DOMAIN` is empty the

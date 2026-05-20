@@ -19,7 +19,7 @@ services:
     platform: linux/amd64          # this host is x86_64
     environment:
       DATA_DIR: /data
-      CORS_ORIGINS: ${CORS_ORIGINS:-https://book.aibix.dev}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://your-app.example.com}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
       GEMINI_USE_GOOGLE_SEARCH: ${GEMINI_USE_GOOGLE_SEARCH:-true}
@@ -55,7 +55,7 @@ services:
     labels:
       - traefik.enable=true
       - traefik.docker.network=proxy
-      - traefik.http.routers.book-rec.rule=Host(`${BOOK_DOMAIN:-book.aibix.dev}`)
+      - traefik.http.routers.book-rec.rule=Host(`${BOOK_DOMAIN:-your-app.example.com}`)
       - traefik.http.routers.book-rec.entrypoints=web
       - traefik.http.services.book-rec.loadbalancer.server.port=80
     healthcheck:
