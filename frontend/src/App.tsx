@@ -6,7 +6,10 @@ import {
   BookOpen,
   Camera,
   Check,
+  ChevronRight,
   LayoutDashboard,
+  LayoutGrid,
+  List,
   Pencil,
   Plus,
   Search,
@@ -18,6 +21,8 @@ import type { Dashboard, MetadataCandidate, MetadataLookup, Series, Volume, Volu
 
 type View = "dashboard" | "collection" | "add";
 type AddStep = "entry" | "review";
+type Detail = { kind: "volume"; volume: Volume } | { kind: "series"; series: Series };
+type Layout = "list" | "grid";
 
 const emptyPayload: VolumePayload = {
   title: "",
@@ -96,6 +101,19 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [editing, setEditing] = useState<Volume | null>(null);
+  const [detail, setDetail] = useState<Detail | null>(null);
+  const [layout, setLayout] = useState<Layout>("list");
+
+  async function deleteVolume(volume: Volume) {
+    await api.deleteVolume(volume.id);
+    setDetail(null);
+    await afterMutation("Volume deleted.");
+  }
+
+  function startEdit(volume: Volume) {
+    setDetail(null);
+    setEditing(volume);
+  }
 
   async function refresh() {
     setIsLoading(true);
@@ -186,29 +204,48 @@ function App() {
           <VolumeList
             volumes={dashboard?.recent_additions ?? []}
             isLoading={isLoading}
-            onEdit={setEditing}
-            onDelete={async (volume) => {
-              await api.deleteVolume(volume.id);
-              await afterMutation("Volume deleted.");
-            }}
+            onView={(volume) => setDetail({ kind: "volume", volume })}
           />
         </section>
       )}
 
       {view === "collection" && (
         <section className="page">
-          <label className="searchbox">
-            <Search size={18} />
-            <input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search title, series, volume, ISBN, author, publisher"
-            />
-          </label>
-          <Collection series={series} isLoading={isLoading} onEdit={setEditing} onDelete={async (volume) => {
-            await api.deleteVolume(volume.id);
-            await afterMutation("Volume deleted.");
-          }} />
+          <div className="collection-toolbar">
+            <label className="searchbox">
+              <Search size={18} />
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search title, series, volume, ISBN, author, publisher"
+              />
+            </label>
+            <div className="layout-toggle" role="group" aria-label="Layout">
+              <button
+                className={`icon-only ${layout === "list" ? "active" : "ghost"}`}
+                onClick={() => setLayout("list")}
+                aria-pressed={layout === "list"}
+                aria-label="List view"
+              >
+                <List size={18} />
+              </button>
+              <button
+                className={`icon-only ${layout === "grid" ? "active" : "ghost"}`}
+                onClick={() => setLayout("grid")}
+                aria-pressed={layout === "grid"}
+                aria-label="Grid view"
+              >
+                <LayoutGrid size={18} />
+              </button>
+            </div>
+          </div>
+          <Collection
+            series={series}
+            isLoading={isLoading}
+            layout={layout}
+            onView={(volume) => setDetail({ kind: "volume", volume })}
+            onViewSeries={(item) => setDetail({ kind: "series", series: item })}
+          />
         </section>
       )}
 
@@ -219,6 +256,23 @@ function App() {
             setView("collection");
           }}
           onMessage={setMessage}
+        />
+      )}
+
+      {detail?.kind === "volume" && (
+        <VolumeDetail
+          volume={detail.volume}
+          onClose={() => setDetail(null)}
+          onEdit={startEdit}
+          onDelete={deleteVolume}
+        />
+      )}
+
+      {detail?.kind === "series" && (
+        <SeriesDetail
+          series={detail.series}
+          onClose={() => setDetail(null)}
+          onView={(volume) => setDetail({ kind: "volume", volume })}
         />
       )}
 
@@ -483,13 +537,15 @@ function VolumeForm({ payload, onChange }: { payload: VolumePayload; onChange: (
 function Collection({
   series,
   isLoading,
-  onEdit,
-  onDelete
+  layout,
+  onView,
+  onViewSeries
 }: {
   series: Series[];
   isLoading: boolean;
-  onEdit: (volume: Volume) => void;
-  onDelete: (volume: Volume) => Promise<void>;
+  layout: Layout;
+  onView: (volume: Volume) => void;
+  onViewSeries: (series: Series) => void;
 }) {
   if (isLoading) return <p className="empty">Loading collection...</p>;
   if (!series.length) return <p className="empty">No matching volumes.</p>;
@@ -498,7 +554,18 @@ function Collection({
     <div className="series-list">
       {series.map((item) => (
         <section key={item.id} className="series-group">
-          <div className="series-heading">
+          <div
+            className="series-heading clickable"
+            role="button"
+            tabIndex={0}
+            onClick={() => onViewSeries(item)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onViewSeries(item);
+              }
+            }}
+          >
             {item.cover_url && (
               <img src={item.cover_url} alt="" className="series-cover" />
             )}
@@ -508,8 +575,38 @@ function Collection({
             </div>
             <span className="series-count">{item.volume_count ?? item.volumes.length}</span>
           </div>
-          <VolumeList volumes={item.volumes} onEdit={onEdit} onDelete={onDelete} />
+          {layout === "grid" ? (
+            <VolumeGrid volumes={item.volumes} onView={onView} />
+          ) : (
+            <VolumeList volumes={item.volumes} onView={onView} />
+          )}
         </section>
+      ))}
+    </div>
+  );
+}
+
+function VolumeGrid({ volumes, onView }: { volumes: Volume[]; onView: (volume: Volume) => void }) {
+  if (!volumes.length) return <p className="empty">No volumes yet.</p>;
+
+  return (
+    <div className="volume-grid">
+      {volumes.map((volume) => (
+        <button
+          key={volume.id}
+          className="volume-tile"
+          onClick={() => onView(volume)}
+          title={volume.title}
+        >
+          {volume.cover_url ? (
+            <img src={volume.cover_url} alt="" />
+          ) : (
+            <div className="cover-fallback"><BookOpen size={24} /></div>
+          )}
+          <span className="volume-tile-label">
+            {volume.volume_number ? `vol. ${volume.volume_number}` : volume.title}
+          </span>
+        </button>
       ))}
     </div>
   );
@@ -518,13 +615,11 @@ function Collection({
 function VolumeList({
   volumes,
   isLoading = false,
-  onEdit,
-  onDelete
+  onView
 }: {
   volumes: Volume[];
   isLoading?: boolean;
-  onEdit: (volume: Volume) => void;
-  onDelete: (volume: Volume) => Promise<void>;
+  onView: (volume: Volume) => void;
 }) {
   if (isLoading) return <p className="empty">Loading...</p>;
   if (!volumes.length) return <p className="empty">No volumes yet.</p>;
@@ -532,7 +627,19 @@ function VolumeList({
   return (
     <div className="volume-list">
       {volumes.map((volume) => (
-        <article key={volume.id} className="volume-card">
+        <article
+          key={volume.id}
+          className="volume-card clickable"
+          role="button"
+          tabIndex={0}
+          onClick={() => onView(volume)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              onView(volume);
+            }
+          }}
+        >
           {volume.cover_url ? <img src={volume.cover_url} alt="" /> : <div className="cover-fallback"><BookOpen size={24} /></div>}
           <div className="volume-main">
             <h3>{volume.title}</h3>
@@ -542,24 +649,138 @@ function VolumeList({
             </p>
             <small>{[volume.isbn_13 || volume.isbn_10 || volume.barcode, volume.storage_location].filter(Boolean).join(" - ")}</small>
           </div>
-          <div className="volume-actions">
-            <button className="ghost icon-only" onClick={() => onEdit(volume)} aria-label="Edit volume">
-              <Pencil size={18} />
-            </button>
-            <button
-              className="ghost danger icon-only"
-              onClick={() => {
-                if (window.confirm("Delete this volume?")) {
-                  onDelete(volume).catch(() => undefined);
-                }
-              }}
-              aria-label="Delete volume"
-            >
-              <Trash2 size={18} />
-            </button>
-          </div>
+          <ChevronRight className="volume-chevron" size={18} />
         </article>
       ))}
+    </div>
+  );
+}
+
+function DetailRow({ label, value }: { label: string; value?: string | null }) {
+  if (!value) return null;
+  return (
+    <div className="detail-row">
+      <dt>{label}</dt>
+      <dd>{value}</dd>
+    </div>
+  );
+}
+
+function VolumeDetail({
+  volume,
+  onClose,
+  onEdit,
+  onDelete
+}: {
+  volume: Volume;
+  onClose: () => void;
+  onEdit: (volume: Volume) => void;
+  onDelete: (volume: Volume) => Promise<void>;
+}) {
+  return (
+    <div className="dialog-backdrop" role="dialog" aria-modal="true" onClick={onClose}>
+      <div className="dialog" onClick={(event) => event.stopPropagation()}>
+        <div className="dialog-header">
+          <h2>Volume details</h2>
+          <button className="ghost icon-only" onClick={onClose} aria-label="Close">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="detail-hero">
+          {volume.cover_url ? (
+            <img src={volume.cover_url} alt="" />
+          ) : (
+            <div className="cover-fallback"><BookOpen size={28} /></div>
+          )}
+          <div>
+            <h3>{volume.title}</h3>
+            <p>
+              {volume.series_title}
+              {volume.volume_number ? ` vol. ${volume.volume_number}` : ""}
+            </p>
+          </div>
+        </div>
+
+        <dl className="detail-list">
+          <DetailRow label="Series" value={volume.series_title} />
+          <DetailRow label="Volume" value={volume.volume_number} />
+          <DetailRow label="Author" value={volume.author} />
+          <DetailRow label="Publisher" value={volume.publisher} />
+          <DetailRow label="ISBN-13" value={volume.isbn_13} />
+          <DetailRow label="ISBN-10" value={volume.isbn_10} />
+          <DetailRow label="Barcode" value={volume.barcode} />
+          <DetailRow label="Published" value={volume.published_date} />
+          <DetailRow label="Purchased" value={volume.purchased_at} />
+          <DetailRow label="Storage" value={volume.storage_location} />
+          <DetailRow label="Notes" value={volume.notes} />
+        </dl>
+
+        <div className="actions">
+          <button
+            className="ghost danger icon-text"
+            onClick={() => {
+              if (window.confirm("Delete this volume?")) {
+                onDelete(volume).catch(() => undefined);
+              }
+            }}
+          >
+            <Trash2 size={18} />
+            Delete
+          </button>
+          <button className="primary icon-text" onClick={() => onEdit(volume)}>
+            <Pencil size={18} />
+            Edit
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SeriesDetail({
+  series,
+  onClose,
+  onView
+}: {
+  series: Series;
+  onClose: () => void;
+  onView: (volume: Volume) => void;
+}) {
+  return (
+    <div className="dialog-backdrop" role="dialog" aria-modal="true" onClick={onClose}>
+      <div className="dialog" onClick={(event) => event.stopPropagation()}>
+        <div className="dialog-header">
+          <h2>Series details</h2>
+          <button className="ghost icon-only" onClick={onClose} aria-label="Close">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="detail-hero">
+          {series.cover_url ? (
+            <img src={series.cover_url} alt="" />
+          ) : (
+            <div className="cover-fallback"><BookOpen size={28} /></div>
+          )}
+          <div>
+            <h3>{series.title}</h3>
+            <p>{[series.author, series.publisher].filter(Boolean).join(" - ")}</p>
+          </div>
+        </div>
+
+        <dl className="detail-list">
+          <DetailRow label="Original title" value={series.original_title} />
+          <DetailRow label="Author" value={series.author} />
+          <DetailRow label="Publisher" value={series.publisher} />
+          <DetailRow label="Status" value={series.status} />
+          <DetailRow label="Volumes owned" value={String(series.volume_count ?? series.volumes.length)} />
+          <DetailRow label="Notes" value={series.notes} />
+        </dl>
+
+        <h3 className="detail-subhead">Volumes</h3>
+        <VolumeList volumes={series.volumes} onView={onView} />
+      </div>
     </div>
   );
 }
