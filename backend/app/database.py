@@ -18,7 +18,10 @@ def utc_now() -> str:
 def normalize_text(value: str | None) -> str:
     if not value:
         return ""
-    return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+    # Keep Unicode word characters (Thai, etc.); collapse everything else to a
+    # single space. The old [^a-z0-9] pattern dropped all non-ASCII letters,
+    # which normalized every Thai title to "" and made unrelated series collide.
+    return re.sub(r"[\W_]+", " ", value.lower(), flags=re.UNICODE).strip()
 
 
 @contextmanager
@@ -168,13 +171,17 @@ def find_or_create_series(
     normalized = normalize_text(title)
     author_norm = normalize_text(author)
 
-    rows = conn.execute(
-        "SELECT id, author FROM series WHERE normalized_title = ?",
-        (normalized,),
-    ).fetchall()
-    for row in rows:
-        if not author_norm or normalize_text(row["author"]) == author_norm:
-            return int(row["id"])
+    # Only reuse an existing series when we have a real normalized title to
+    # match on. An empty normalized title must never collide with other
+    # empty-normalized series, or unrelated books get lumped together.
+    if normalized:
+        rows = conn.execute(
+            "SELECT id, author FROM series WHERE normalized_title = ?",
+            (normalized,),
+        ).fetchall()
+        for row in rows:
+            if not author_norm or normalize_text(row["author"]) == author_norm:
+                return int(row["id"])
 
     now = utc_now()
     cursor = conn.execute(

@@ -204,8 +204,14 @@ async def lookup_gemini(client: httpx.AsyncClient, code: str) -> list[MetadataCa
     parsed = extract_gemini_json(response_payload)
     logger.info(f"Parsed result: {json.dumps(parsed, indent=2, ensure_ascii=False) if parsed else 'None'}")
 
-    if not parsed or not parsed.get("found") or not parsed.get("title"):
-        logger.warning(f"Gemini lookup failed: found={parsed.get('found') if parsed else None}, has_title={bool(parsed.get('title')) if parsed else False}")
+    if not parsed:
+        logger.error("Gemini lookup: could not parse JSON from response")
+        return []
+    if not parsed.get("found"):
+        logger.info(f"Gemini lookup: book not found (confidence={parsed.get('confidence')})")
+        return []
+    if not parsed.get("title"):
+        logger.warning("Gemini lookup: found=True but response has no title")
         return []
 
     title = compact_text(parsed.get("title"))
