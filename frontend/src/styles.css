@@ -475,6 +475,17 @@ h3 {
   margin: 18px 0 0;
 }
 
+.detail-subhead-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.detail-subhead-row .detail-subhead {
+  margin: 18px 0 0;
+}
+
 .scanner {
   position: relative;
   display: grid;

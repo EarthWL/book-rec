@@ -101,6 +101,7 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [editing, setEditing] = useState<Volume | null>(null);
+  const [adding, setAdding] = useState<Series | null>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
   const [layout, setLayout] = useState<Layout>("list");
 
@@ -113,6 +114,11 @@ function App() {
   function startEdit(volume: Volume) {
     setDetail(null);
     setEditing(volume);
+  }
+
+  function startAddVolume(series: Series) {
+    setDetail(null);
+    setAdding(series);
   }
 
   async function refresh() {
@@ -140,6 +146,7 @@ function App() {
   async function afterMutation(success: string) {
     setMessage(success);
     setEditing(null);
+    setAdding(null);
     await refresh();
   }
 
@@ -273,6 +280,7 @@ function App() {
           series={detail.series}
           onClose={() => setDetail(null)}
           onView={(volume) => setDetail({ kind: "volume", volume })}
+          onAddVolume={startAddVolume}
         />
       )}
 
@@ -281,6 +289,15 @@ function App() {
           volume={editing}
           onClose={() => setEditing(null)}
           onSaved={async () => afterMutation("Volume updated.")}
+          onMessage={setMessage}
+        />
+      )}
+
+      {adding && (
+        <AddVolumeDialog
+          series={adding}
+          onClose={() => setAdding(null)}
+          onSaved={async () => afterMutation("Volume added.")}
           onMessage={setMessage}
         />
       )}
@@ -741,11 +758,13 @@ function VolumeDetail({
 function SeriesDetail({
   series,
   onClose,
-  onView
+  onView,
+  onAddVolume
 }: {
   series: Series;
   onClose: () => void;
   onView: (volume: Volume) => void;
+  onAddVolume: (series: Series) => void;
 }) {
   return (
     <div className="dialog-backdrop" role="dialog" aria-modal="true" onClick={onClose}>
@@ -778,7 +797,13 @@ function SeriesDetail({
           <DetailRow label="Notes" value={series.notes} />
         </dl>
 
-        <h3 className="detail-subhead">Volumes</h3>
+        <div className="detail-subhead-row">
+          <h3 className="detail-subhead">Volumes</h3>
+          <button className="secondary icon-text" onClick={() => onAddVolume(series)}>
+            <Plus size={16} />
+            Add volume
+          </button>
+        </div>
         <VolumeList volumes={series.volumes} onView={onView} />
       </div>
     </div>
@@ -845,6 +870,105 @@ function EditDialog({
           <button className="primary icon-text" disabled={isSaving} onClick={save}>
             <Check size={18} />
             {isSaving ? "Saving..." : "Save"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Build a payload for a new volume by carrying over the series-wide info from
+// the latest volume and suggesting the next volume number / title. Volume-
+// specific fields (identifiers, published date, cover) are left blank for the
+// user to fill in.
+function nextVolumePayload(series: Series): VolumePayload {
+  const volumes = series.volumes ?? [];
+  const template = volumes.reduce<Volume | undefined>((best, volume) => {
+    const current = parseInt((volume.volume_number ?? "").replace(/\D/g, ""), 10);
+    if (Number.isNaN(current)) return best;
+    const bestNum = best ? parseInt((best.volume_number ?? "").replace(/\D/g, ""), 10) : -Infinity;
+    return current >= bestNum ? volume : best;
+  }, volumes[volumes.length - 1]);
+
+  const rawNumber = template?.volume_number ?? "";
+  const digits = rawNumber.match(/\d+/)?.[0] ?? "";
+  let nextNumber = "";
+  if (digits) {
+    nextNumber = String(parseInt(digits, 10) + 1).padStart(digits.length, "0");
+  }
+
+  let nextTitle = "";
+  if (template?.title && digits && nextNumber) {
+    const index = template.title.lastIndexOf(digits);
+    nextTitle =
+      index >= 0
+        ? template.title.slice(0, index) + nextNumber + template.title.slice(index + digits.length)
+        : "";
+  }
+
+  return {
+    series_id: series.id,
+    series_title: series.title,
+    author: series.author ?? template?.author ?? "",
+    publisher: series.publisher ?? template?.publisher ?? "",
+    storage_location: template?.storage_location ?? "",
+    title: nextTitle,
+    volume_number: nextNumber,
+    isbn_13: "",
+    isbn_10: "",
+    barcode: "",
+    cover_url: "",
+    published_date: "",
+    purchased_at: new Date().toISOString().slice(0, 10),
+    notes: ""
+  };
+}
+
+function AddVolumeDialog({
+  series,
+  onClose,
+  onSaved,
+  onMessage
+}: {
+  series: Series;
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+  onMessage: (value: string) => void;
+}) {
+  const [payload, setPayload] = useState<VolumePayload>(() => nextVolumePayload(series));
+  const [isSaving, setIsSaving] = useState(false);
+
+  async function save() {
+    if (!payload.title.trim()) {
+      onMessage("Title is required before saving.");
+      return;
+    }
+    setIsSaving(true);
+    try {
+      await api.createVolume(payload);
+      await onSaved();
+    } catch (error) {
+      onMessage(errorText(error));
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <div className="dialog-backdrop" role="dialog" aria-modal="true">
+      <div className="dialog">
+        <div className="dialog-header">
+          <h2>Add volume to {series.title}</h2>
+          <button className="ghost icon-only" onClick={onClose} aria-label="Close">
+            <X size={18} />
+          </button>
+        </div>
+        <VolumeForm payload={payload} onChange={setPayload} />
+        <div className="actions">
+          <button className="secondary" onClick={onClose}>Cancel</button>
+          <button className="primary icon-text" disabled={isSaving} onClick={save}>
+            <Check size={18} />
+            {isSaving ? "Saving..." : "Save volume"}
           </button>
         </div>
       </div>
