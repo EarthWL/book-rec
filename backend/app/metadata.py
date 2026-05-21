@@ -27,6 +27,7 @@ GEMINI_REQUIRE_SOURCE = os.getenv("GEMINI_REQUIRE_SOURCE", "true").strip().lower
     "off",
 }
 GEMINI_MIN_CONFIDENCE = float(os.getenv("GEMINI_MIN_CONFIDENCE", "0.75"))
+GEMINI_TIMEOUT = float(os.getenv("GEMINI_TIMEOUT", "30"))
 
 
 def hyphenate_isbn(code: str) -> str:
@@ -269,7 +270,9 @@ async def lookup_metadata(code: str) -> list[MetadataCandidate]:
 
     logger.info(f"Normalized code: {normalized}")
 
-    timeout = httpx.Timeout(7.0, connect=3.0)
+    # Gemini + Google Search grounding takes ~15-20s per call, so a 7s read timeout
+    # turned every grounded lookup into a silent "not found". Allow enough headroom.
+    timeout = httpx.Timeout(GEMINI_TIMEOUT, connect=5.0)
     headers = {
         "User-Agent": "Mozilla/5.0 (compatible; MangaShelf/0.1; +https://localhost)",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,application/json;q=0.8,*/*;q=0.7",
